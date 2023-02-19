@@ -33,6 +33,15 @@ def RotateScheduler():
             print("Rotating")
             thread.join()
 
+CorrectKey = ""
+
+@app.route("/analytics/download/<PrivateKey>", methods=["GET"])
+def download(PrivateKey):
+    if CorrectKey == PrivateKey:
+        return open("analytics.json").read()
+    else:
+        abort(401)
+
 app.run(
     port=80,
     host="0.0.0.0"
