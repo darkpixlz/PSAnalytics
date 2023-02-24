@@ -1,21 +1,12 @@
+
 from flask import Flask, abort, render_template, request
 import json
 import datetime
 import threading
+import csv
 
 app = Flask("PS_Analytics")
 placeids = []
-
-
-@app.route("/somethingelse/<ServerID>", methods=["POST"])
-def Server(ServerID):
-    try:
-        print(f"ServerID is {ServerID}")
-        postdata = request.get_json()
-        placeids.append(postdata["PlaceID"])
-        return "OK"
-    except:
-        return abort(400)
 
 
 @app.route('/error-logs', methods=['POST'])
@@ -30,74 +21,54 @@ def error_logs():
 
     return 'Logged error successfully.'
 
+
 @app.route('/asset-loaded', methods=['POST'])
 def assets_loaded():
-    data = json.loads(request.data)
-    assets_loaded = data['AssetsLoaded']
-    place_id = str(data['PlaceId'])
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        data = json.loads(request.data)
+        assets_loaded = int(data['AssetsLoaded'])
+        place_id = str(data['PlaceId'])
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    except:
+        abort(400)
 
-    with open('files/AssetsLoaded.json', 'r+') as f:
-        try:
-            file_data = json.load(f)
-        except json.JSONDecodeError:
-            file_data = {}
+    with open('Files/AssetsLoaded.csv', 'r') as file:
+        NewFile = False
+        if not file.read():
+            NewFile = True
+        NewAssetCount = False
+        reader = csv.DictReader(file)
+        rows = []
+        RowToReplace = None  # initialize to None
+        NewEntry = True
+        for row in reader:
+            if row[1] == place_id and row[0].split(" ")[0] == timestamp.split(" ")[0]:
+                NewAssetCount = int(row["AssetsLoaded"]) + assets_loaded
+                NewEntry = False
+                rows.append(row)
+                RowToReplace = row
+            else:
+                rows.append(row)
+            if not NewAssetCount:
+                NewEntry = True
 
-        # Check if the place_id already exists in the data
-        if place_id in file_data:
-            # Update the existing entry with the new assets_loaded value
-            file_data[place_id]['AssetsLoaded'] += assets_loaded
-        else:
-            # Create a new entry for the place_id
-            file_data[place_id] = {'AssetsLoaded': assets_loaded, 'PlaceId': place_id}
+        if not NewEntry and RowToReplace is not None:  # check if RowToReplace has been updated
+            rows.remove(RowToReplace)
+            rows.append([RowToReplace[0], RowToReplace[1], int(RowToReplace[2]) + assets_loaded])
+        NewRows = rows
 
-        # Check if it's a new day
-        if not file_data or datetime.datetime.strptime(list(file_data.keys())[-1], '%Y-%m-%d %H:%M:%S').date() != datetime.datetime.now().date():
-            # If it's a new day, add a new entry to the file
-            file_data[timestamp] = {place_id: file_data[place_id]}
-        else:
-            # If it's the same day, update the last entry in the file
-            last_key = list(file_data.keys())[-1]
-            file_data[last_key][place_id] = {**file_data[last_key][place_id], 'AssetsLoaded': file_data[place_id]['AssetsLoaded']}
+    with open('Files/AssetsLoaded.csv', 'a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=['Timestamp', 'PlaceID', 'AssetsLoaded'])
+        if NewFile:
+            writer.writeheader()
 
-        # Write the updated data back to the file
-        f.seek(0)
-        json.dump(file_data, f, indent=2)
+        if not NewEntry:
+            writer.writerows(NewRows)
 
-    return 'Assets loaded successfully.'
+        if NewEntry:
+            writer.writerow({'Timestamp': timestamp, 'PlaceID': place_id, 'AssetsLoaded': assets_loaded})
 
-
-
-def Rotate():
-    todays_servers = len(placeids)
-    analytics = [obj for obj in json.loads(
-        open("files/analytics.json", "r").read())]
-    analytics.append(
-        f"{[datetime.datetime.now().split(' ')[0]]} = {todays_servers}")
-    with open("analytics.json", "a") as handle:
-        handle.write(json.dumps(analytics))
-
-
-def RotateScheduler():
-    while True:
-        CurrentTime = datetime.datetime.now().time()
-        scheduled_time = datetime.time(hour=00, minute=00)
-        if CurrentTime.hour == scheduled_time.hour and CurrentTime.minute == scheduled_time.minute:
-            thread = threading.Thread(target=Rotate)
-            thread.start()
-            print("Rotating")
-            thread.join()
-
-
-CorrectKey = ""
-
-
-@app.route("/analytics/download/<PrivateKey>", methods=["GET"])
-def download(PrivateKey):
-    if CorrectKey == PrivateKey:
-        return open("analytics.json").read()
-    else:
-        abort(401)
+    return 'OK'
 
 
 app.run(
