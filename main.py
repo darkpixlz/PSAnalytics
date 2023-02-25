@@ -1,20 +1,20 @@
 
-from flask import Flask, abort, render_template, request
+from flask import Flask, abort, request
 import json
 import datetime
-import threading
 import csv
 
 app = Flask("PS_Analytics")
-placeids = []
 
+def fetch_date() -> str:
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 @app.route('/error-logs', methods=['POST'])
 def error_logs():
     error_data = json.loads(request.data.decode('utf-8'))
     error_contents = error_data.get('ErrorContents', '')
     place_id = error_data.get('PlaceId', '')
-    log_entry = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} / {place_id}]: {error_contents}\n"
+    log_entry = f"[{fetch_date()} / {place_id}]: {error_contents}\n"
 
     with open('files/error_logs.txt', 'a') as f:
         f.write(log_entry)
@@ -28,8 +28,8 @@ def assets_loaded():
         data = json.loads(request.data)
         assets_loaded = int(data['AssetsLoaded'])
         place_id = str(data['PlaceId'])
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    except:
+        timestamp = fetch_date()
+    except (ValueError, KeyError):
         abort(400)
 
     with open('Files/AssetsLoaded.csv', 'r') as file:
